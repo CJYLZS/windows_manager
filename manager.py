@@ -1,4 +1,5 @@
 from cjutils.utils import *
+sys.path.insert(0, './win32')
 from keyboard import AnyKey
 from windows import WindowsHook
 from windows import WindowInfo
