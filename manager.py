@@ -1,3 +1,4 @@
+from stat import FILE_ATTRIBUTE_NO_SCRUB_DATA
 from cjutils.utils import *
 sys.path.insert(0, './win32')
 from keyboard import AnyKey
@@ -11,68 +12,74 @@ import win32gui
 
 class WindowManager:
 
+    def __add_new_hwnd(self, hwnd):
+        if hwnd == self.current_hwnd:
+            return
+        if hwnd in self.windows_list:
+            self.windows_list.remove(hwnd)
+            self.ws_idx = self.windows_list.index(self.current_hwnd)
+        self.windows_list = self.windows_list[:self.ws_idx + 1]
+        self.windows_list.append(hwnd)
+        self.ws_idx += 1
+        self.current_hwnd = hwnd
+
     def __update_window_info(self, hwnd, event):
         if not hwnd:
             return
         winfo = self.windows_hook.get_window_info(hwnd)
-        if os.path.basename(winfo.file_name) in self.exclude_programs:
+        if not winfo.file_name:
+            err(winfo, 'file name is None')
+        if not winfo.file_name or os.path.basename(winfo.file_name) in self.exclude_programs:
             return
         if not self.visible(winfo):
             return
 
-        info(winfo)
         self.windows_info_dict[hwnd] = winfo
-        if event == win32con.EVENT_SYSTEM_FOREGROUND:
-            if hwnd != self.current_hwnd and not self.__mod1_pressed:
-                if hwnd in self.windows_list:
-                    self.windows_list.remove(hwnd)
-                    self.ws_idx = self.windows_list.index(self.current_hwnd)
-                self.windows_list = self.windows_list[:self.ws_idx + 1]
-                self.windows_list.append(hwnd)
-                self.ws_idx += 1
-                self.current_hwnd = hwnd
+        if event == win32con.EVENT_SYSTEM_FOREGROUND and not self.__mod1_pressed:
+            self.__add_new_hwnd(hwnd)
 
-    def onModKey1Down(self):
+    def __onModKey1Down(self):
         self.__mod1_pressed = True
         return 0
 
-    def onModKey1Up(self):
+    def __onModKey1Up(self):
         self.__mod1_pressed = False
-        self.flash_back()
+        self.__flash_back()
         return 0
 
-    def onModKey2Down(self):
+    def __onModKey2Down(self):
         if not self.__mod1_pressed:
             return win32con.HC_ACTION
         self.__mod2_pressed = True
         return win32con.HC_ACTION
 
-    def onModKey2Up(self):
+    def __onModKey2Up(self):
         if not self.__mod1_pressed:
             return win32con.HC_ACTION
         self.__mod2_pressed = False
+        self.__move_current_hwnd_front()
         return win32con.HC_ACTION
 
-    def onBackDown(self):
+    def __onBackDown(self):
         if not self.__mod1_pressed:
             return win32con.HC_ACTION
-        self.back()
+        self.__back()
         if self.__mod2_pressed:
-            self.update_current_hwnd()
+            self.__update_current_hwnd()
         return win32con.HC_SKIP
 
-    def onBackUp(self):
+    def __onBackUp(self):
         return win32con.HC_SKIP
 
-    def onFrontDown(self):
+    def __onFrontDown(self):
         if not self.__mod1_pressed:
             return win32con.HC_ACTION
-        self.front()
+        self.__front()
         if self.__mod2_pressed:
-            self.update_current_hwnd()
+            self.__update_current_hwnd()
         return win32con.HC_SKIP
 
-    def onFrontUp(self):
+    def __onFrontUp(self):
         return win32con.HC_ACTION
 
     def __init__(self) -> None:
@@ -97,11 +104,11 @@ class WindowManager:
         hotkey = self.config["hotkey"]
         self.anykey.register_hotkeys(
             # do not use lalt!!
-            ((hotkey["mod_key"],), self.onModKey1Down, self.onModKey1Up, 0),
+            ((hotkey["mod_key"],), self.__onModKey1Down, self.__onModKey1Up, 0),
             ((hotkey["move_mod_key"],),
-             self.onModKey2Down, self.onModKey2Up, 0),
-            ((hotkey["back_key"],), self.onBackDown, self.onBackUp, 0),
-            ((hotkey["front_key"],), self.onFrontDown, self.onFrontUp, 0)
+             self.__onModKey2Down, self.__onModKey2Up, 0),
+            ((hotkey["back_key"],), self.__onBackDown, self.__onBackUp, 0),
+            ((hotkey["front_key"],), self.__onFrontDown, self.__onFrontUp, 0)
         )
         self.current_state = ''
         self.__mod1_pressed = False
@@ -118,9 +125,6 @@ class WindowManager:
             return False
         return True
 
-    def stop(self):
-        self.__event_loop.stop()
-
     def start(self):
         self.__event_loop.start()
 
@@ -135,7 +139,7 @@ class WindowManager:
         win32gui.SetForegroundWindow(hwnd)
         info(self.windows_hook.get_window_info(hwnd))
 
-    def back(self):
+    def __back(self):
         if self.ws_idx == 0:
             return
         if time.time() - self.__last_change_time < self.__change_interval:
@@ -148,7 +152,7 @@ class WindowManager:
             return
         self.move_foreground(hwnd)
 
-    def front(self):
+    def __front(self):
         if self.ws_idx == len(self.windows_list) - 1:
             return
         if time.time() - self.__last_change_time < self.__change_interval:
@@ -162,14 +166,22 @@ class WindowManager:
             return
         self.move_foreground(hwnd)
 
-    def flash_back(self):
+    def __flash_back(self):
         if self.windows_list[self.ws_idx] == self.current_hwnd:
             return
+        if not win32gui.IsWindow(self.current_hwnd):
+            hwnd = win32gui.GetForegroundWindow()
+            self.__add_new_hwnd(hwnd)
         self.ws_idx = self.windows_list.index(self.current_hwnd)
         self.move_foreground(self.current_hwnd)
 
-    def update_current_hwnd(self):
+    def __update_current_hwnd(self):
         self.current_hwnd = self.windows_list[self.ws_idx]
+
+    def __move_current_hwnd_front(self):
+        self.windows_list.remove(self.current_hwnd)
+        self.windows_list.append(self.current_hwnd)
+        self.ws_idx = len(self.windows_list) - 1
 
     def show_window(self, hwnd):
         d = self.windows_info_dict[hwnd]
