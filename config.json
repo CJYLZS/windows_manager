@@ -1,9 +1,13 @@
 {
-    "programs":
-    [
-        "Code.exe",
-        "Clash for Windows.exe",
-        "chrome.exe",
-        "QQ.exe"
-    ]
+    "exclude_programs": [
+        "explorer.exe",
+        "Taskmgr.exe",
+        "uTools.exe"
+    ],
+    "hotkey": {
+        "mod_key": "lctrl",
+        "move_mod_key": "lshift",
+        "back_key": ",",
+        "front_key": "."
+    }
 }
